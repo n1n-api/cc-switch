@@ -478,6 +478,35 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
 
   // ========== 聚合网站 ==========
   {
+    name: "n1n.ai",
+    websiteUrl: "https://n1n.ai",
+    apiKeyUrl: "https://n1n.ai/settings/api-keys",
+    settingsConfig: {
+      npm: "@ai-sdk/openai-compatible",
+      name: "n1n.ai",
+      options: {
+        baseURL: "https://api.n1n.ai/v1",
+        apiKey: "",
+      },
+      models: {
+        "gpt-4o": { name: "GPT-4o" },
+        "claude-3-5-sonnet-20240620": { name: "Claude 3.5 Sonnet" },
+      },
+    },
+    category: "aggregator",
+    isPartner: true,
+    partnerPromotionKey: "n1n",
+    icon: "n1n",
+    iconColor: "#000000",
+    templateValues: {
+      apiKey: {
+        label: "API Key",
+        placeholder: "sk-...",
+        editorValue: "",
+      },
+    },
+  },
+  {
     name: "AiHubMix",
     websiteUrl: "https://aihubmix.com",
     apiKeyUrl: "https://aihubmix.com",
