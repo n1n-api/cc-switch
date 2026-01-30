@@ -9,11 +9,12 @@ import {
   useUninstallSkill,
   useScanUnmanagedSkills,
   useImportSkillsFromApps,
+  useInstallSkillsFromZip,
   type InstalledSkill,
   type AppType,
 } from "@/hooks/useSkills";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { settingsApi } from "@/lib/api";
+import { settingsApi, skillsApi } from "@/lib/api";
 import { toast } from "sonner";
 
 interface UnifiedSkillsPanelProps {
@@ -27,6 +28,7 @@ interface UnifiedSkillsPanelProps {
 export interface UnifiedSkillsPanelHandle {
   openDiscovery: () => void;
   openImport: () => void;
+  openInstallFromZip: () => void;
 }
 
 const UnifiedSkillsPanel = React.forwardRef<
@@ -49,15 +51,17 @@ const UnifiedSkillsPanel = React.forwardRef<
   const { data: unmanagedSkills, refetch: scanUnmanaged } =
     useScanUnmanagedSkills();
   const importMutation = useImportSkillsFromApps();
+  const installFromZipMutation = useInstallSkillsFromZip();
 
   // Count enabled skills per app
   const enabledCounts = useMemo(() => {
-    const counts = { claude: 0, codex: 0, gemini: 0 };
+    const counts = { claude: 0, codex: 0, gemini: 0, opencode: 0 };
     if (!skills) return counts;
     skills.forEach((skill) => {
       if (skill.apps.claude) counts.claude++;
       if (skill.apps.codex) counts.codex++;
       if (skill.apps.gemini) counts.gemini++;
+      if (skill.apps.opencode) counts.opencode++;
     });
     return counts;
   }, [skills]);
@@ -126,20 +130,64 @@ const UnifiedSkillsPanel = React.forwardRef<
     }
   };
 
+  const handleInstallFromZip = async () => {
+    try {
+      // 打开文件选择对话框
+      const filePath = await skillsApi.openZipFileDialog();
+      if (!filePath) {
+        // 用户取消选择
+        return;
+      }
+
+      // 默认使用 claude 作为当前应用
+      const currentApp: AppType = "claude";
+
+      // 安装 Skills
+      const installed = await installFromZipMutation.mutateAsync({
+        filePath,
+        currentApp,
+      });
+
+      if (installed.length === 0) {
+        toast.info(t("skills.installFromZip.noSkillsFound"), {
+          closeButton: true,
+        });
+      } else if (installed.length === 1) {
+        toast.success(
+          t("skills.installFromZip.successSingle", { name: installed[0].name }),
+          { closeButton: true },
+        );
+      } else {
+        toast.success(
+          t("skills.installFromZip.successMultiple", {
+            count: installed.length,
+          }),
+          { closeButton: true },
+        );
+      }
+    } catch (error) {
+      toast.error(t("skills.installFailed"), {
+        description: String(error),
+      });
+    }
+  };
+
   React.useImperativeHandle(ref, () => ({
     openDiscovery: onOpenDiscovery,
     openImport: handleOpenImport,
+    openInstallFromZip: handleInstallFromZip,
   }));
 
   return (
-    <div className="mx-auto max-w-[56rem] px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
+    <div className="px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
       {/* Info Section */}
       <div className="flex-shrink-0 py-4 glass rounded-xl border border-white/10 mb-4 px-6">
         <div className="text-sm text-muted-foreground">
           {t("skills.installed", { count: skills?.length || 0 })} ·{" "}
           {t("skills.apps.claude")}: {enabledCounts.claude} ·{" "}
           {t("skills.apps.codex")}: {enabledCounts.codex} ·{" "}
-          {t("skills.apps.gemini")}: {enabledCounts.gemini}
+          {t("skills.apps.gemini")}: {enabledCounts.gemini} ·{" "}
+          {t("skills.apps.opencode")}: {enabledCounts.opencode}
         </div>
       </div>
 
@@ -305,6 +353,22 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
             checked={skill.apps.gemini}
             onCheckedChange={(checked: boolean) =>
               onToggleApp(skill.id, "gemini", checked)
+            }
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <label
+            htmlFor={`${skill.id}-opencode`}
+            className="text-sm text-foreground/80 cursor-pointer"
+          >
+            {t("skills.apps.opencode")}
+          </label>
+          <Switch
+            id={`${skill.id}-opencode`}
+            checked={skill.apps.opencode}
+            onCheckedChange={(checked: boolean) =>
+              onToggleApp(skill.id, "opencode", checked)
             }
           />
         </div>

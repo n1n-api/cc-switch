@@ -50,6 +50,28 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
     iconColor: "#4285F4",
   },
   {
+    name: "n1n.ai",
+    websiteUrl: "https://n1n.ai",
+    apiKeyUrl: "https://n1n.ai/settings/api-keys",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://api.n1n.ai/gemini",
+        GEMINI_MODEL: "gemini-1.5-pro-latest",
+      },
+    },
+    baseURL: "https://api.n1n.ai/gemini",
+    model: "gemini-1.5-pro-latest",
+    description: "n1n.ai Gemini API",
+    category: "aggregator",
+    isPartner: true,
+    partnerPromotionKey: "n1n",
+    endpointCandidates: [
+      "https://api.n1n.ai/gemini",
+    ],
+    icon: "n1n",
+    iconColor: "#000000",
+  },
+  {
     name: "PackyCode",
     websiteUrl: "https://www.packyapi.com",
     apiKeyUrl: "https://www.packyapi.com/register?aff=cc-switch",

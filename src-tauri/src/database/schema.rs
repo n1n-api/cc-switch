@@ -58,7 +58,7 @@ impl Database {
             id TEXT PRIMARY KEY, name TEXT NOT NULL, server_config TEXT NOT NULL,
             description TEXT, homepage TEXT, docs TEXT, tags TEXT NOT NULL DEFAULT '[]',
             enabled_claude BOOLEAN NOT NULL DEFAULT 0, enabled_codex BOOLEAN NOT NULL DEFAULT 0,
-            enabled_gemini BOOLEAN NOT NULL DEFAULT 0
+            enabled_gemini BOOLEAN NOT NULL DEFAULT 0, enabled_opencode BOOLEAN NOT NULL DEFAULT 0
         )",
             [],
         )
@@ -85,6 +85,7 @@ impl Database {
             enabled_claude BOOLEAN NOT NULL DEFAULT 0,
             enabled_codex BOOLEAN NOT NULL DEFAULT 0,
             enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+            enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
             installed_at INTEGER NOT NULL DEFAULT 0
         )",
             [],
@@ -119,6 +120,8 @@ impl Database {
             circuit_failure_threshold INTEGER NOT NULL DEFAULT 4, circuit_success_threshold INTEGER NOT NULL DEFAULT 2,
             circuit_timeout_seconds INTEGER NOT NULL DEFAULT 60, circuit_error_rate_threshold REAL NOT NULL DEFAULT 0.6,
             circuit_min_requests INTEGER NOT NULL DEFAULT 10,
+            default_cost_multiplier TEXT NOT NULL DEFAULT '1',
+            pricing_model_source TEXT NOT NULL DEFAULT 'response',
             created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )", []).map_err(|e| AppError::Database(e.to_string()))?;
 
@@ -169,6 +172,7 @@ impl Database {
         // 10. Proxy Request Logs 表
         conn.execute("CREATE TABLE IF NOT EXISTS proxy_request_logs (
             request_id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, app_type TEXT NOT NULL, model TEXT NOT NULL,
+            request_model TEXT,
             input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
             cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
             input_cost_usd TEXT NOT NULL DEFAULT '0', output_cost_usd TEXT NOT NULL DEFAULT '0',
@@ -346,6 +350,16 @@ impl Database {
                         Self::migrate_v2_to_v3(conn)?;
                         Self::set_user_version(conn, 3)?;
                     }
+                    3 => {
+                        log::info!("迁移数据库从 v3 到 v4（OpenCode 支持）");
+                        Self::migrate_v3_to_v4(conn)?;
+                        Self::set_user_version(conn, 4)?;
+                    }
+                    4 => {
+                        log::info!("迁移数据库从 v4 到 v5（计费模式支持）");
+                        Self::migrate_v4_to_v5(conn)?;
+                        Self::set_user_version(conn, 5)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -515,6 +529,7 @@ impl Database {
         // proxy_request_logs 表
         conn.execute("CREATE TABLE IF NOT EXISTS proxy_request_logs (
             request_id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, app_type TEXT NOT NULL, model TEXT NOT NULL,
+            request_model TEXT,
             input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
             cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
             input_cost_usd TEXT NOT NULL DEFAULT '0', output_cost_usd TEXT NOT NULL DEFAULT '0',
@@ -671,6 +686,8 @@ impl Database {
             circuit_failure_threshold INTEGER NOT NULL DEFAULT 4, circuit_success_threshold INTEGER NOT NULL DEFAULT 2,
             circuit_timeout_seconds INTEGER NOT NULL DEFAULT 60, circuit_error_rate_threshold REAL NOT NULL DEFAULT 0.6,
             circuit_min_requests INTEGER NOT NULL DEFAULT 10,
+            default_cost_multiplier TEXT NOT NULL DEFAULT '1',
+            pricing_model_source TEXT NOT NULL DEFAULT 'response',
             created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )", [])?;
 
@@ -846,6 +863,54 @@ impl Database {
              注意：旧的安装记录已清除，首次启动时将自动扫描文件系统重建数据。"
         );
 
+        Ok(())
+    }
+
+    /// v3 -> v4 迁移：添加 OpenCode 支持
+    ///
+    /// 为 mcp_servers 和 skills 表添加 enabled_opencode 列。
+    fn migrate_v3_to_v4(conn: &Connection) -> Result<(), AppError> {
+        // 为 mcp_servers 表添加 enabled_opencode 列
+        Self::add_column_if_missing(
+            conn,
+            "mcp_servers",
+            "enabled_opencode",
+            "BOOLEAN NOT NULL DEFAULT 0",
+        )?;
+
+        // 为 skills 表添加 enabled_opencode 列
+        Self::add_column_if_missing(
+            conn,
+            "skills",
+            "enabled_opencode",
+            "BOOLEAN NOT NULL DEFAULT 0",
+        )?;
+
+        log::info!("v3 -> v4 迁移完成：已添加 OpenCode 支持");
+        Ok(())
+    }
+
+    /// v4 -> v5 迁移：新增计费模式配置与请求模型字段
+    fn migrate_v4_to_v5(conn: &Connection) -> Result<(), AppError> {
+        if Self::table_exists(conn, "proxy_config")? {
+            Self::add_column_if_missing(
+                conn,
+                "proxy_config",
+                "default_cost_multiplier",
+                "TEXT NOT NULL DEFAULT '1'",
+            )?;
+            Self::add_column_if_missing(
+                conn,
+                "proxy_config",
+                "pricing_model_source",
+                "TEXT NOT NULL DEFAULT 'response'",
+            )?;
+        }
+        if Self::table_exists(conn, "proxy_request_logs")? {
+            Self::add_column_if_missing(conn, "proxy_request_logs", "request_model", "TEXT")?;
+        }
+
+        log::info!("v4 -> v5 迁移完成：已添加计费模式与请求模型字段");
         Ok(())
     }
 

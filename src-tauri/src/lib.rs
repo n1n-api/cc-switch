@@ -13,6 +13,7 @@ mod gemini_config;
 mod gemini_mcp;
 mod init_status;
 mod mcp;
+mod opencode_config;
 mod panic_hook;
 mod prompt;
 mod prompt_files;
@@ -265,33 +266,41 @@ pub fn run() {
                     log::warn!("初始化 Updater 插件失败，已跳过：{e}");
                 }
             }
-            // 初始化日志（Debug 和 Release 模式都启用 Info 级别）
-            // 日志同时输出到控制台和文件（<app_config_dir>/logs/；若设置了覆盖则使用覆盖目录）
+            // 初始化日志（单文件输出到 <app_config_dir>/logs/cc-switch.log）
             {
                 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
                 let log_dir = panic_hook::get_log_dir();
 
+                // 确保日志目录存在
+                if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                    eprintln!("创建日志目录失败: {e}");
+                }
+
+                // 启动时删除旧日志文件，实现单文件覆盖效果
+                let log_file_path = log_dir.join("cc-switch.log");
+                let _ = std::fs::remove_file(&log_file_path);
+
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
+                        // 初始化为 Trace，允许后续通过 log::set_max_level() 动态调整级别
+                        .level(log::LevelFilter::Trace)
                         .targets([
-                            // 输出到控制台
                             Target::new(TargetKind::Stdout),
-                            // 输出到日志文件
                             Target::new(TargetKind::Folder {
                                 path: log_dir,
                                 file_name: Some("cc-switch".into()),
                             }),
                         ])
-                        .rotation_strategy(RotationStrategy::KeepAll)
-                        .max_file_size(5_000_000) // 5MB 单文件上限
+                        // 单文件模式：启动时删除旧文件，达到大小时轮转
+                        // 注意：KeepSome(n) 内部会做 n-2 运算，n=1 会导致 usize 下溢
+                        // KeepSome(2) 是最小安全值，表示不保留轮转文件
+                        .rotation_strategy(RotationStrategy::KeepSome(2))
+                        // 单文件大小限制 1GB
+                        .max_file_size(1024 * 1024 * 1024)
                         .timezone_strategy(TimezoneStrategy::UseLocal)
                         .build(),
                 )?;
-
-                // 清理旧日志文件，只保留最近 2 个
-                panic_hook::cleanup_old_logs();
             }
 
             // 初始化数据库
@@ -482,6 +491,17 @@ pub fn run() {
                 }
             }
 
+            // 2.1 OpenCode 供应商导入（累加式模式，需特殊处理）
+            // OpenCode 与其他应用不同：配置文件中可同时存在多个供应商
+            // 需要遍历 provider 字段下的每个供应商并导入
+            match crate::services::provider::import_opencode_providers_from_live(&app_state) {
+                Ok(count) if count > 0 => {
+                    log::info!("✓ Imported {count} OpenCode provider(s) from live config");
+                }
+                Ok(_) => log::debug!("○ No OpenCode providers found to import"),
+                Err(e) => log::debug!("○ Failed to import OpenCode providers: {e}"),
+            }
+
             // 3. 导入 MCP 服务器配置（表空时触发）
             if app_state.db.is_mcp_table_empty().unwrap_or(false) {
                 log::info!("MCP table empty, importing from live configurations...");
@@ -508,6 +528,14 @@ pub fn run() {
                     }
                     Ok(_) => log::debug!("○ No Gemini MCP servers found to import"),
                     Err(e) => log::warn!("✗ Failed to import Gemini MCP: {e}"),
+                }
+
+                match crate::services::mcp::McpService::import_from_opencode(&app_state) {
+                    Ok(count) if count > 0 => {
+                        log::info!("✓ Imported {count} MCP server(s) from OpenCode");
+                    }
+                    Ok(_) => log::debug!("○ No OpenCode MCP servers found to import"),
+                    Err(e) => log::warn!("✗ Failed to import OpenCode MCP: {e}"),
                 }
             }
 
@@ -640,6 +668,19 @@ pub fn run() {
             // 将同一个实例注入到全局状态，避免重复创建导致的不一致
             app.manage(app_state);
 
+            // 从数据库加载日志配置并应用
+            {
+                let db = &app.state::<AppState>().db;
+                if let Ok(log_config) = db.get_log_config() {
+                    log::set_max_level(log_config.to_level_filter());
+                    log::info!(
+                        "已加载日志配置: enabled={}, level={}",
+                        log_config.enabled,
+                        log_config.level
+                    );
+                }
+            }
+
             // 初始化 SkillService
             let skill_service = SkillService::new();
             app.manage(commands::skill::SkillServiceState(Arc::new(skill_service)));
@@ -704,6 +745,24 @@ pub fn run() {
                 restore_proxy_state_on_startup(&state).await;
             });
 
+            // 静默启动：根据设置决定是否显示主窗口
+            let settings = crate::settings::get_settings();
+            if let Some(window) = app.get_webview_window("main") {
+                if settings.silent_startup {
+                    // 静默启动模式：保持窗口隐藏
+                    let _ = window.hide();
+                    #[cfg(target_os = "windows")]
+                    let _ = window.set_skip_taskbar(true);
+                    #[cfg(target_os = "macos")]
+                    tray::apply_tray_policy(app.handle(), false);
+                    log::info!("静默启动模式：主窗口已隐藏");
+                } else {
+                    // 正常启动模式：显示窗口
+                    let _ = window.show();
+                    log::info!("正常启动模式：主窗口已显示");
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -712,6 +771,7 @@ pub fn run() {
             commands::add_provider,
             commands::update_provider,
             commands::delete_provider,
+            commands::remove_provider_from_live_config,
             commands::switch_provider,
             commands::import_default_config,
             commands::get_claude_config_status,
@@ -736,6 +796,8 @@ pub fn run() {
             commands::save_settings,
             commands::get_rectifier_config,
             commands::set_rectifier_config,
+            commands::get_log_config,
+            commands::set_log_config,
             commands::restart_app,
             commands::check_for_updates,
             commands::is_portable_mode,
@@ -788,6 +850,7 @@ pub fn run() {
             commands::import_config_from_file,
             commands::save_file_dialog,
             commands::open_file_dialog,
+            commands::open_zip_file_dialog,
             commands::sync_current_providers_live,
             // Deep link import
             commands::parse_deeplink,
@@ -817,6 +880,7 @@ pub fn run() {
             commands::get_skill_repos,
             commands::add_skill_repo,
             commands::remove_skill_repo,
+            commands::install_skills_from_zip,
             // Auto launch
             commands::set_auto_launch,
             commands::get_auto_launch_status,
@@ -833,6 +897,10 @@ pub fn run() {
             commands::update_global_proxy_config,
             commands::get_proxy_config_for_app,
             commands::update_proxy_config_for_app,
+            commands::get_default_cost_multiplier,
+            commands::set_default_cost_multiplier,
+            commands::get_pricing_model_source,
+            commands::set_pricing_model_source,
             commands::is_proxy_running,
             commands::is_live_takeover_active,
             commands::switch_proxy_provider,
@@ -874,6 +942,9 @@ pub fn run() {
             commands::upsert_universal_provider,
             commands::delete_universal_provider,
             commands::sync_universal_provider,
+            // OpenCode specific
+            commands::import_opencode_providers_from_live,
+            commands::get_opencode_live_provider_ids,
             // Global upstream proxy
             commands::get_global_proxy_url,
             commands::set_global_proxy_url,

@@ -78,6 +78,25 @@ export const codexProviderPresets: CodexProviderPreset[] = [
     iconColor: "#00A67E",
   },
   {
+    name: "n1n.ai",
+    websiteUrl: "https://n1n.ai",
+    apiKeyUrl: "https://n1n.ai/settings/api-keys",
+    category: "aggregator",
+    auth: generateThirdPartyAuth(""),
+    config: generateThirdPartyConfig(
+      "n1n",
+      "https://api.n1n.ai/v1",
+      "gpt-4o",
+    ),
+    endpointCandidates: [
+      "https://api.n1n.ai/v1",
+    ],
+    isPartner: true,
+    partnerPromotionKey: "n1n",
+    icon: "n1n",
+    iconColor: "#000000",
+  },
+  {
     name: "Azure OpenAI",
     websiteUrl:
       "https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/codex",
@@ -191,6 +210,22 @@ requires_openai_auth = true`,
     partnerPromotionKey: "aigocode", // 促销信息 i18n key
     icon: "aigocode",
     iconColor: "#5B7FFF",
+  },
+  {
+    name: "RightCode",
+    websiteUrl: "https://www.right.codes",
+    apiKeyUrl: "https://www.right.codes/register?aff=CCSWITCH",
+    auth: generateThirdPartyAuth(""),
+    config: generateThirdPartyConfig(
+      "rightcode",
+      "https://right.codes/codex/v1",
+      "gpt-5.2",
+    ),
+    category: "third_party",
+    isPartner: true,
+    partnerPromotionKey: "rightcode",
+    icon: "rc",
+    iconColor: "#E96B2C",
   },
   {
     name: "OpenRouter",

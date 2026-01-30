@@ -2,13 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 
 // ========== 类型定义 ==========
 
-export type AppType = "claude" | "codex" | "gemini";
+export type AppType = "claude" | "codex" | "gemini" | "opencode";
 
 /** Skill 应用启用状态 */
 export interface SkillApps {
   claude: boolean;
   codex: boolean;
   gemini: boolean;
+  opencode: boolean;
 }
 
 /** 已安装的 Skill（v3.10.0+ 统一结构） */
@@ -157,5 +158,20 @@ export const skillsApi = {
   /** 删除仓库 */
   async removeRepo(owner: string, name: string): Promise<boolean> {
     return await invoke("remove_skill_repo", { owner, name });
+  },
+
+  // ========== ZIP 安装 ==========
+
+  /** 打开 ZIP 文件选择对话框 */
+  async openZipFileDialog(): Promise<string | null> {
+    return await invoke("open_zip_file_dialog");
+  },
+
+  /** 从 ZIP 文件安装 Skills */
+  async installFromZip(
+    filePath: string,
+    currentApp: AppType,
+  ): Promise<InstalledSkill[]> {
+    return await invoke("install_skills_from_zip", { filePath, currentApp });
   },
 };

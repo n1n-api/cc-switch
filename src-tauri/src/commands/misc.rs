@@ -295,10 +295,10 @@ fn scan_cli_version(tool: &str) -> (Option<String>, Option<String>) {
 
     let home = dirs::home_dir().unwrap_or_default();
 
-    // 常见的 npm 全局安装路径
+    // 常见的安装路径（原生安装优先）
     let mut search_paths: Vec<std::path::PathBuf> = vec![
+        home.join(".local/bin"), // Native install (official recommended)
         home.join(".npm-global/bin"),
-        home.join(".local/bin"),
         home.join("n/bin"), // n version manager
     ];
 
@@ -320,6 +320,19 @@ fn scan_cli_version(tool: &str) -> (Option<String>, Option<String>) {
             search_paths.push(appdata.join("npm"));
         }
         search_paths.push(std::path::PathBuf::from("C:\\Program Files\\nodejs"));
+    }
+
+    // 添加 fnm 路径支持
+    let fnm_base = home.join(".local/state/fnm_multishells");
+    if fnm_base.exists() {
+        if let Ok(entries) = std::fs::read_dir(&fnm_base) {
+            for entry in entries.flatten() {
+                let bin_path = entry.path().join("bin");
+                if bin_path.exists() {
+                    search_paths.push(bin_path);
+                }
+            }
+        }
     }
 
     // 扫描 nvm 目录下的所有 node 版本
@@ -526,18 +539,15 @@ fn launch_terminal_with_env(
     // 创建并写入配置文件
     write_claude_config(&config_file, &env_vars)?;
 
-    // 转义配置文件路径用于 shell
-    let config_path_escaped = escape_shell_path(&config_file);
-
     #[cfg(target_os = "macos")]
     {
-        launch_macos_terminal(&config_file, &config_path_escaped)?;
+        launch_macos_terminal(&config_file)?;
         Ok(())
     }
 
     #[cfg(target_os = "linux")]
     {
-        launch_linux_terminal(&config_file, &config_path_escaped)?;
+        launch_linux_terminal(&config_file)?;
         Ok(())
     }
 
@@ -571,115 +581,277 @@ fn write_claude_config(
     std::fs::write(config_file, config_json).map_err(|e| format!("写入配置文件失败: {e}"))
 }
 
-/// 转义 shell 路径
-fn escape_shell_path(path: &std::path::Path) -> String {
-    path.to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('$', "\\$")
-        .replace(' ', "\\ ")
-}
-
-/// 生成 bash 包装脚本，用于清理临时文件
-fn generate_wrapper_script(config_path: &str, escaped_path: &str) -> String {
-    format!(
-        "bash -c 'trap \"rm -f \\\"{config_path}\\\"\" EXIT; echo \"Using provider-specific claude config:\"; echo \"{escaped_path}\"; claude --settings \"{escaped_path}\"; exec bash --norc --noprofile'"
-    )
-}
-
-/// macOS: 使用 Terminal.app 启动
+/// macOS: 根据用户首选终端启动
 #[cfg(target_os = "macos")]
-fn launch_macos_terminal(
-    config_file: &std::path::Path,
-    config_path_escaped: &str,
-) -> Result<(), String> {
-    use std::process::Command;
+fn launch_macos_terminal(config_file: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
 
-    let config_path_for_script = config_file.to_string_lossy().replace('\"', "\\\"");
+    let preferred = crate::settings::get_preferred_terminal();
+    let terminal = preferred.as_deref().unwrap_or("terminal");
 
-    let shell_script = generate_wrapper_script(&config_path_for_script, config_path_escaped);
+    let temp_dir = std::env::temp_dir();
+    let script_file = temp_dir.join(format!("cc_switch_launcher_{}.sh", std::process::id()));
+    let config_path = config_file.to_string_lossy();
 
-    let script = format!(
-        r#"tell application "Terminal"
-                activate
-                do script "{}"
-            end tell"#,
-        shell_script.replace('\"', "\\\"")
+    // Write the shell script to a temp file
+    let script_content = format!(
+        r#"#!/bin/bash
+trap 'rm -f "{config_path}" "{script_file}"' EXIT
+echo "Using provider-specific claude config:"
+echo "{config_path}"
+claude --settings "{config_path}"
+exec bash --norc --noprofile
+"#,
+        config_path = config_path,
+        script_file = script_file.display()
     );
 
-    Command::new("osascript")
+    std::fs::write(&script_file, &script_content).map_err(|e| format!("写入启动脚本失败: {e}"))?;
+
+    // Make script executable
+    std::fs::set_permissions(&script_file, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| format!("设置脚本权限失败: {e}"))?;
+
+    // Try the preferred terminal first, fall back to Terminal.app if it fails
+    // Note: Kitty doesn't need the -e flag, others do
+    let result = match terminal {
+        "iterm2" => launch_macos_iterm2(&script_file),
+        "alacritty" => launch_macos_open_app("Alacritty", &script_file, true),
+        "kitty" => launch_macos_open_app("kitty", &script_file, false),
+        "ghostty" => launch_macos_open_app("Ghostty", &script_file, true),
+        _ => launch_macos_terminal_app(&script_file), // "terminal" or default
+    };
+
+    // If preferred terminal fails and it's not the default, try Terminal.app as fallback
+    if result.is_err() && terminal != "terminal" {
+        log::warn!(
+            "首选终端 {} 启动失败，回退到 Terminal.app: {:?}",
+            terminal,
+            result.as_ref().err()
+        );
+        return launch_macos_terminal_app(&script_file);
+    }
+
+    result
+}
+
+/// macOS: Terminal.app
+#[cfg(target_os = "macos")]
+fn launch_macos_terminal_app(script_file: &std::path::Path) -> Result<(), String> {
+    use std::process::Command;
+
+    let applescript = format!(
+        r#"tell application "Terminal"
+    activate
+    do script "bash '{}'"
+end tell"#,
+        script_file.display()
+    );
+
+    let output = Command::new("osascript")
         .arg("-e")
-        .arg(&script)
-        .spawn()
-        .map_err(|e| format!("启动 macOS 终端失败: {e}"))?;
+        .arg(&applescript)
+        .output()
+        .map_err(|e| format!("执行 osascript 失败: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Terminal.app 执行失败 (exit code: {:?}): {}",
+            output.status.code(),
+            stderr
+        ));
+    }
 
     Ok(())
 }
 
-/// Linux: 尝试使用常见终端启动
-#[cfg(target_os = "linux")]
-fn launch_linux_terminal(
-    config_file: &std::path::Path,
-    config_path_escaped: &str,
+/// macOS: iTerm2
+#[cfg(target_os = "macos")]
+fn launch_macos_iterm2(script_file: &std::path::Path) -> Result<(), String> {
+    use std::process::Command;
+
+    let applescript = format!(
+        r#"tell application "iTerm"
+    activate
+    tell current window
+        create tab with default profile
+        tell current session
+            write text "bash '{}'"
+        end tell
+    end tell
+end tell"#,
+        script_file.display()
+    );
+
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&applescript)
+        .output()
+        .map_err(|e| format!("执行 osascript 失败: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "iTerm2 执行失败 (exit code: {:?}): {}",
+            output.status.code(),
+            stderr
+        ));
+    }
+
+    Ok(())
+}
+
+/// macOS: 使用 open -a 启动支持 --args 参数的终端（Alacritty/Kitty/Ghostty）
+#[cfg(target_os = "macos")]
+fn launch_macos_open_app(
+    app_name: &str,
+    script_file: &std::path::Path,
+    use_e_flag: bool,
 ) -> Result<(), String> {
     use std::process::Command;
 
-    let terminals = [
-        "gnome-terminal",
-        "konsole",
-        "xfce4-terminal",
-        "mate-terminal",
-        "lxterminal",
-        "alacritty",
-        "kitty",
+    let mut cmd = Command::new("open");
+    cmd.arg("-a").arg(app_name).arg("--args");
+
+    if use_e_flag {
+        cmd.arg("-e");
+    }
+    cmd.arg("bash").arg(script_file);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("启动 {} 失败: {e}", app_name))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "{} 启动失败 (exit code: {:?}): {}",
+            app_name,
+            output.status.code(),
+            stderr
+        ));
+    }
+
+    Ok(())
+}
+
+/// Linux: 根据用户首选终端启动
+#[cfg(target_os = "linux")]
+fn launch_linux_terminal(config_file: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let preferred = crate::settings::get_preferred_terminal();
+
+    // Default terminal list with their arguments
+    let default_terminals = [
+        ("gnome-terminal", vec!["--"]),
+        ("konsole", vec!["-e"]),
+        ("xfce4-terminal", vec!["-e"]),
+        ("mate-terminal", vec!["--"]),
+        ("lxterminal", vec!["-e"]),
+        ("alacritty", vec!["-e"]),
+        ("kitty", vec!["-e"]),
+        ("ghostty", vec!["-e"]),
     ];
 
-    let config_path_for_bash = config_file.to_string_lossy();
-    let shell_cmd = generate_wrapper_script(&config_path_for_bash, config_path_escaped);
+    // Create temp script file
+    let temp_dir = std::env::temp_dir();
+    let script_file = temp_dir.join(format!("cc_switch_launcher_{}.sh", std::process::id()));
+    let config_path = config_file.to_string_lossy();
+
+    let script_content = format!(
+        r#"#!/bin/bash
+trap 'rm -f "{config_path}" "{script_file}"' EXIT
+echo "Using provider-specific claude config:"
+echo "{config_path}"
+claude --settings "{config_path}"
+exec bash --norc --noprofile
+"#,
+        config_path = config_path,
+        script_file = script_file.display()
+    );
+
+    std::fs::write(&script_file, &script_content).map_err(|e| format!("写入启动脚本失败: {e}"))?;
+
+    std::fs::set_permissions(&script_file, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| format!("设置脚本权限失败: {e}"))?;
+
+    // Build terminal list: preferred terminal first (if specified), then defaults
+    let terminals_to_try: Vec<(&str, Vec<&str>)> = if let Some(ref pref) = preferred {
+        // Find the preferred terminal's args from default list
+        let pref_args = default_terminals
+            .iter()
+            .find(|(name, _)| *name == pref.as_str())
+            .map(|(_, args)| args.iter().map(|s| *s).collect::<Vec<&str>>())
+            .unwrap_or_else(|| vec!["-e"]); // Default args for unknown terminals
+
+        let mut list = vec![(pref.as_str(), pref_args)];
+        // Add remaining terminals as fallbacks
+        for (name, args) in &default_terminals {
+            if *name != pref.as_str() {
+                list.push((*name, args.iter().map(|s| *s).collect()));
+            }
+        }
+        list
+    } else {
+        default_terminals
+            .iter()
+            .map(|(name, args)| (*name, args.iter().map(|s| *s).collect()))
+            .collect()
+    };
 
     let mut last_error = String::from("未找到可用的终端");
 
-    for terminal in terminals {
-        // 检查终端是否存在
-        if std::path::Path::new(&format!("/usr/bin/{}", terminal)).exists()
+    for (terminal, args) in terminals_to_try {
+        // Check if terminal exists in common paths
+        let terminal_exists = std::path::Path::new(&format!("/usr/bin/{}", terminal)).exists()
             || std::path::Path::new(&format!("/bin/{}", terminal)).exists()
-        {
-            let result = match terminal {
-                "gnome-terminal" | "mate-terminal" => Command::new(terminal)
-                    .arg("--")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(&shell_cmd)
-                    .spawn(),
-                _ => Command::new(terminal)
-                    .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(&shell_cmd)
-                    .spawn(),
-            };
+            || std::path::Path::new(&format!("/usr/local/bin/{}", terminal)).exists()
+            || which_command(terminal);
+
+        if terminal_exists {
+            let result = Command::new(terminal)
+                .args(&args)
+                .arg("bash")
+                .arg(script_file.to_string_lossy().as_ref())
+                .spawn();
 
             match result {
                 Ok(_) => return Ok(()),
                 Err(e) => {
-                    last_error = format!("启动 {} 失败: {}", terminal, e);
+                    last_error = format!("执行 {} 失败: {}", terminal, e);
                 }
             }
         }
     }
 
-    // 清理配置文件
+    // Clean up on failure
+    let _ = std::fs::remove_file(&script_file);
     let _ = std::fs::remove_file(config_file);
     Err(last_error)
 }
 
-/// Windows: 创建临时批处理文件启动
+/// Check if a command exists using `which`
+#[cfg(target_os = "linux")]
+fn which_command(cmd: &str) -> bool {
+    use std::process::Command;
+    Command::new("which")
+        .arg(cmd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Windows: 根据用户首选终端启动
 #[cfg(target_os = "windows")]
 fn launch_windows_terminal(
     temp_dir: &std::path::Path,
     config_file: &std::path::Path,
 ) -> Result<(), String> {
-    use std::process::Command;
+    let preferred = crate::settings::get_preferred_terminal();
+    let terminal = preferred.as_deref().unwrap_or("cmd");
 
     let bat_file = temp_dir.join(format!("cc_switch_claude_{}.bat", std::process::id()));
     let config_path_for_batch = config_file.to_string_lossy().replace('&', "^&");
@@ -691,21 +863,61 @@ echo {}
 claude --settings \"{}\"
 del \"{}\" >nul 2>&1
 del \"%~f0\" >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo Press any key to close...
-    pause >nul
-)",
+",
         config_path_for_batch, config_path_for_batch, config_path_for_batch
     );
 
-    std::fs::write(&bat_file, content).map_err(|e| format!("写入批处理文件失败: {e}"))?;
+    std::fs::write(&bat_file, &content).map_err(|e| format!("写入批处理文件失败: {e}"))?;
 
-    Command::new("cmd")
-        .args(["/C", "start", "cmd", "/C", &bat_file.to_string_lossy()])
+    let bat_path = bat_file.to_string_lossy();
+    let ps_cmd = format!("& '{}'", bat_path);
+
+    // Try the preferred terminal first
+    let result = match terminal {
+        "powershell" => run_windows_start_command(
+            &["powershell", "-NoExit", "-Command", &ps_cmd],
+            "PowerShell",
+        ),
+        "wt" => run_windows_start_command(&["wt", "cmd", "/K", &bat_path], "Windows Terminal"),
+        _ => run_windows_start_command(&["cmd", "/K", &bat_path], "cmd"), // "cmd" or default
+    };
+
+    // If preferred terminal fails and it's not the default, try cmd as fallback
+    if result.is_err() && terminal != "cmd" {
+        log::warn!(
+            "首选终端 {} 启动失败，回退到 cmd: {:?}",
+            terminal,
+            result.as_ref().err()
+        );
+        return run_windows_start_command(&["cmd", "/K", &bat_path], "cmd");
+    }
+
+    result
+}
+
+/// Windows: Run a start command with common error handling
+#[cfg(target_os = "windows")]
+fn run_windows_start_command(args: &[&str], terminal_name: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let mut full_args = vec!["/C", "start"];
+    full_args.extend(args);
+
+    let output = Command::new("cmd")
+        .args(&full_args)
         .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|e| format!("启动 Windows 终端失败: {e}"))?;
+        .output()
+        .map_err(|e| format!("启动 {} 失败: {e}", terminal_name))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "{} 启动失败 (exit code: {:?}): {}",
+            terminal_name,
+            output.status.code(),
+            stderr
+        ));
+    }
 
     Ok(())
 }

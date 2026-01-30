@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Zap,
   Globe,
+  ScrollText,
 } from "lucide-react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
 import { toast } from "sonner";
@@ -33,6 +34,9 @@ import { settingsApi } from "@/lib/api";
 import { LanguageSettings } from "@/components/settings/LanguageSettings";
 import { ThemeSettings } from "@/components/settings/ThemeSettings";
 import { WindowSettings } from "@/components/settings/WindowSettings";
+import { AppVisibilitySettings } from "@/components/settings/AppVisibilitySettings";
+import { SkillSyncMethodSettings } from "@/components/settings/SkillSyncMethodSettings";
+import { TerminalSettings } from "@/components/settings/TerminalSettings";
 import { DirectorySettings } from "@/components/settings/DirectorySettings";
 import { ImportExportSection } from "@/components/settings/ImportExportSection";
 import { AboutSection } from "@/components/settings/AboutSection";
@@ -44,6 +48,7 @@ import { AutoFailoverConfigPanel } from "@/components/proxy/AutoFailoverConfigPa
 import { FailoverQueueManager } from "@/components/proxy/FailoverQueueManager";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { RectifierConfigPanel } from "@/components/settings/RectifierConfigPanel";
+import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
 import { useSettings } from "@/hooks/useSettings";
 import { useImportExport } from "@/hooks/useImportExport";
 import { useTranslation } from "react-i18next";
@@ -202,7 +207,7 @@ export function SettingsPage({
   };
 
   return (
-    <div className="mx-auto max-w-[56rem] flex flex-col h-[calc(100vh-8rem)] overflow-hidden px-6">
+    <div className="flex flex-col h-full overflow-hidden px-6">
       {isBusy ? (
         <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -224,8 +229,9 @@ export function SettingsPage({
             <TabsTrigger value="about">{t("common.about")}</TabsTrigger>
           </TabsList>
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2">
-            <TabsContent value="general" className="space-y-6 mt-0">
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2">
+              <TabsContent value="general" className="space-y-6 mt-0">
               {settings ? (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -238,15 +244,31 @@ export function SettingsPage({
                     onChange={(lang) => handleAutoSave({ language: lang })}
                   />
                   <ThemeSettings />
+                  <AppVisibilitySettings
+                    settings={settings}
+                    onChange={handleAutoSave}
+                  />
                   <WindowSettings
                     settings={settings}
                     onChange={handleAutoSave}
+                  />
+                  <SkillSyncMethodSettings
+                    value={settings.skillSyncMethod ?? "auto"}
+                    onChange={(method) =>
+                      handleAutoSave({ skillSyncMethod: method })
+                    }
+                  />
+                  <TerminalSettings
+                    value={settings.preferredTerminal}
+                    onChange={(terminal) =>
+                      handleAutoSave({ preferredTerminal: terminal })
+                    }
                   />
                 </motion.div>
               ) : null}
             </TabsContent>
 
-            <TabsContent value="advanced" className="space-y-6 mt-0 pb-6">
+            <TabsContent value="advanced" className="space-y-6 mt-0 pb-4">
               {settings ? (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -286,6 +308,7 @@ export function SettingsPage({
                           claudeDir={settings.claudeConfigDir}
                           codexDir={settings.codexConfigDir}
                           geminiDir={settings.geminiConfigDir}
+                          opencodeDir={settings.opencodeConfigDir}
                           onDirectoryChange={updateDirectory}
                           onBrowseDirectory={browseDirectory}
                           onResetDirectory={resetDirectory}
@@ -456,6 +479,28 @@ export function SettingsPage({
                     </AccordionItem>
 
                     <AccordionItem
+                      value="rectifier"
+                      className="rounded-xl glass-card overflow-hidden"
+                    >
+                      <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <Zap className="h-5 w-5 text-purple-500" />
+                          <div className="text-left">
+                            <h3 className="text-base font-semibold">
+                              {t("settings.advanced.rectifier.title")}
+                            </h3>
+                            <p className="text-sm text-muted-foreground font-normal">
+                              {t("settings.advanced.rectifier.description")}
+                            </p>
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+                        <RectifierConfigPanel />
+                      </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem
                       value="test"
                       className="rounded-xl glass-card overflow-hidden"
                     >
@@ -554,47 +599,27 @@ export function SettingsPage({
                     </AccordionItem>
 
                     <AccordionItem
-                      value="rectifier"
+                      value="logConfig"
                       className="rounded-xl glass-card overflow-hidden"
                     >
                       <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
                         <div className="flex items-center gap-3">
-                          <Zap className="h-5 w-5 text-purple-500" />
+                          <ScrollText className="h-5 w-5 text-cyan-500" />
                           <div className="text-left">
                             <h3 className="text-base font-semibold">
-                              {t("settings.advanced.rectifier.title")}
+                              {t("settings.advanced.logConfig.title")}
                             </h3>
                             <p className="text-sm text-muted-foreground font-normal">
-                              {t("settings.advanced.rectifier.description")}
+                              {t("settings.advanced.logConfig.description")}
                             </p>
                           </div>
                         </div>
                       </AccordionTrigger>
                       <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
-                        <RectifierConfigPanel />
+                        <LogConfigPanel />
                       </AccordionContent>
                     </AccordionItem>
                   </Accordion>
-
-                  <div className="pt-4">
-                    <Button
-                      onClick={handleSave}
-                      className="w-full h-12 text-base font-medium"
-                      disabled={isSaving}
-                    >
-                      {isSaving ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          {t("settings.saving")}
-                        </span>
-                      ) : (
-                        <>
-                          <Save className="mr-2 h-5 w-5" />
-                          {t("common.save")}
-                        </>
-                      )}
-                    </Button>
-                  </div>
                 </motion.div>
               ) : null}
             </TabsContent>
@@ -606,6 +631,33 @@ export function SettingsPage({
             <TabsContent value="usage" className="mt-0">
               <UsageDashboard />
             </TabsContent>
+            </div>
+
+            {activeTab === "advanced" && settings && (
+              <div
+                className="flex-shrink-0 py-4 border-t border-border-default"
+                style={{ backgroundColor: "hsl(var(--background))" }}
+              >
+                <div className="px-6 flex items-center justify-end gap-3">
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {t("settings.saving")}
+                      </span>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        {t("common.save")}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </Tabs>
       )}

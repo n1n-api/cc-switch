@@ -5,6 +5,7 @@ use std::sync::{OnceLock, RwLock};
 
 use crate::app_config::AppType;
 use crate::error::AppError;
+use crate::services::skill::SyncMethod;
 
 /// 自定义端点配置（历史兼容，实际存储在 provider.meta.custom_endpoints）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,6 +15,47 @@ pub struct CustomEndpoint {
     pub added_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_used: Option<i64>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// 主页面显示的应用配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibleApps {
+    #[serde(default = "default_true")]
+    pub claude: bool,
+    #[serde(default = "default_true")]
+    pub codex: bool,
+    #[serde(default = "default_true")]
+    pub gemini: bool,
+    #[serde(default = "default_true")]
+    pub opencode: bool,
+}
+
+impl Default for VisibleApps {
+    fn default() -> Self {
+        Self {
+            claude: true,
+            codex: true,
+            gemini: true,
+            opencode: true,
+        }
+    }
+}
+
+impl VisibleApps {
+    /// Check if the specified app is visible
+    pub fn is_visible(&self, app: &AppType) -> bool {
+        match app {
+            AppType::Claude => self.claude,
+            AppType::Codex => self.codex,
+            AppType::Gemini => self.gemini,
+            AppType::OpenCode => self.opencode,
+        }
+    }
 }
 
 /// 应用设置结构
@@ -32,13 +74,20 @@ pub struct AppSettings {
     #[serde(default)]
     pub enable_claude_plugin_integration: bool,
     /// 是否跳过 Claude Code 初次安装确认
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub skip_claude_onboarding: bool,
     /// 是否开机自启
     #[serde(default)]
     pub launch_on_startup: bool,
+    /// 静默启动（程序启动时不显示主窗口，仅托盘运行）
+    #[serde(default)]
+    pub silent_startup: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+
+    // ===== 主页面显示的应用 =====
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible_apps: Option<VisibleApps>,
 
     // ===== 设备级目录覆盖 =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,6 +96,8 @@ pub struct AppSettings {
     pub codex_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode_config_dir: Option<String>,
 
     // ===== 当前供应商 ID（设备级）=====
     /// 当前 Claude 供应商 ID（本地存储，优先于数据库 is_current）
@@ -58,6 +109,22 @@ pub struct AppSettings {
     /// 当前 Gemini 供应商 ID（本地存储，优先于数据库 is_current）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_gemini: Option<String>,
+    /// 当前 OpenCode 供应商 ID（本地存储，对 OpenCode 可能无意义，但保持结构一致）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_provider_opencode: Option<String>,
+
+    // ===== Skill 同步设置 =====
+    /// Skill 同步方式：auto（默认，优先 symlink）、symlink、copy
+    #[serde(default)]
+    pub skill_sync_method: SyncMethod,
+
+    // ===== 终端设置 =====
+    /// 首选终端应用（可选，默认使用系统默认终端）
+    /// - macOS: "terminal" | "iterm2" | "warp" | "alacritty" | "kitty" | "ghostty"
+    /// - Windows: "cmd" | "powershell" | "wt" (Windows Terminal)
+    /// - Linux: "gnome-terminal" | "konsole" | "xfce4-terminal" | "alacritty" | "kitty" | "ghostty"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_terminal: Option<String>,
 }
 
 fn default_show_in_tray() -> bool {
@@ -68,25 +135,27 @@ fn default_minimize_to_tray_on_close() -> bool {
     true
 }
 
-fn default_true() -> bool {
-    true
-}
-
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             show_in_tray: true,
             minimize_to_tray_on_close: true,
             enable_claude_plugin_integration: false,
-            skip_claude_onboarding: true,
+            skip_claude_onboarding: false,
             launch_on_startup: false,
+            silent_startup: false,
             language: None,
+            visible_apps: None,
             claude_config_dir: None,
             codex_config_dir: None,
             gemini_config_dir: None,
+            opencode_config_dir: None,
             current_provider_claude: None,
             current_provider_codex: None,
             current_provider_gemini: None,
+            current_provider_opencode: None,
+            skill_sync_method: SyncMethod::default(),
+            preferred_terminal: None,
         }
     }
 }
@@ -94,7 +163,11 @@ impl Default for AppSettings {
 impl AppSettings {
     fn settings_path() -> Option<PathBuf> {
         // settings.json 保留用于旧版本迁移和无数据库场景
-        dirs::home_dir().map(|h| h.join(".cc-switch").join("settings.json"))
+        Some(
+            crate::config::get_home_dir()
+                .join(".cc-switch")
+                .join("settings.json"),
+        )
     }
 
     fn normalize_paths(&mut self) {
@@ -114,6 +187,13 @@ impl AppSettings {
 
         self.gemini_config_dir = self
             .gemini_config_dir
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        self.opencode_config_dir = self
+            .opencode_config_dir
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
@@ -251,6 +331,14 @@ pub fn get_gemini_override_dir() -> Option<PathBuf> {
         .map(|p| resolve_override_path(p))
 }
 
+pub fn get_opencode_override_dir() -> Option<PathBuf> {
+    let settings = settings_store().read().ok()?;
+    settings
+        .opencode_config_dir
+        .as_ref()
+        .map(|p| resolve_override_path(p))
+}
+
 // ===== 当前供应商管理函数 =====
 
 /// 获取指定应用类型的当前供应商 ID（从本地 settings 读取）
@@ -263,6 +351,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::Claude => settings.current_provider_claude.clone(),
         AppType::Codex => settings.current_provider_codex.clone(),
         AppType::Gemini => settings.current_provider_gemini.clone(),
+        AppType::OpenCode => settings.current_provider_opencode.clone(),
     }
 }
 
@@ -277,6 +366,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::Claude => settings.current_provider_claude = id.map(|s| s.to_string()),
         AppType::Codex => settings.current_provider_codex = id.map(|s| s.to_string()),
         AppType::Gemini => settings.current_provider_gemini = id.map(|s| s.to_string()),
+        AppType::OpenCode => settings.current_provider_opencode = id.map(|s| s.to_string()),
     }
 
     update_settings(settings)
@@ -315,4 +405,31 @@ pub fn get_effective_current_provider(
 
     // Fallback 到数据库的 is_current
     db.get_current_provider(app_type.as_str())
+}
+
+// ===== Skill 同步方式管理函数 =====
+
+/// 获取 Skill 同步方式配置
+pub fn get_skill_sync_method() -> SyncMethod {
+    settings_store()
+        .read()
+        .unwrap_or_else(|e| {
+            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            e.into_inner()
+        })
+        .skill_sync_method
+}
+
+// ===== 终端设置管理函数 =====
+
+/// 获取首选终端应用
+pub fn get_preferred_terminal() -> Option<String> {
+    settings_store()
+        .read()
+        .unwrap_or_else(|e| {
+            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            e.into_inner()
+        })
+        .preferred_terminal
+        .clone()
 }

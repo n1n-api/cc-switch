@@ -63,6 +63,26 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#D4915D",
   },
   {
+    name: "n1n.ai",
+    websiteUrl: "https://n1n.ai",
+    apiKeyUrl: "https://n1n.ai/settings/api-keys",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.n1n.ai/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "claude-3-5-sonnet-20240620",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-3-haiku-20240307",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-3-5-sonnet-20240620",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-3-opus-20240229",
+      },
+    },
+    category: "aggregator",
+    isPartner: true,
+    partnerPromotionKey: "n1n",
+    icon: "n1n",
+    iconColor: "#000000",
+  },
+  {
     name: "DeepSeek",
     websiteUrl: "https://platform.deepseek.com",
     settingsConfig: {
@@ -100,7 +120,7 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#0F62FE",
   },
   {
-    name: "Z.ai GLM",
+    name: "Zhipu GLM en",
     websiteUrl: "https://z.ai",
     apiKeyUrl: "https://z.ai/subscribe?ic=8JVLJQFSKB",
     settingsConfig: {
@@ -143,10 +163,10 @@ export const providerPresets: ProviderPreset[] = [
       env: {
         ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
         ANTHROPIC_AUTH_TOKEN: "",
-        ANTHROPIC_MODEL: "kimi-k2-thinking",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "kimi-k2-thinking",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "kimi-k2-thinking",
-        ANTHROPIC_DEFAULT_OPUS_MODEL: "kimi-k2-thinking",
+        ANTHROPIC_MODEL: "kimi-k2.5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "kimi-k2.5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "kimi-k2.5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "kimi-k2.5",
       },
     },
     category: "cn_official",
@@ -160,10 +180,6 @@ export const providerPresets: ProviderPreset[] = [
       env: {
         ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
         ANTHROPIC_AUTH_TOKEN: "",
-        ANTHROPIC_MODEL: "kimi-for-coding",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "kimi-for-coding",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "kimi-for-coding",
-        ANTHROPIC_DEFAULT_OPUS_MODEL: "kimi-for-coding",
       },
     },
     category: "cn_official",
@@ -211,6 +227,7 @@ export const providerPresets: ProviderPreset[] = [
         editorValue: "",
       },
     },
+    icon: "catcoder",
   },
   {
     name: "Longcat",
@@ -337,6 +354,42 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#006FFB",
   },
   {
+    name: "SiliconFlow",
+    websiteUrl: "https://siliconflow.cn",
+    apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.siliconflow.cn",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "Pro/MiniMaxAI/MiniMax-M2.1",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "Pro/MiniMaxAI/MiniMax-M2.1",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "Pro/MiniMaxAI/MiniMax-M2.1",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "Pro/MiniMaxAI/MiniMax-M2.1",
+      },
+    },
+    category: "aggregator",
+    icon: "siliconflow",
+    iconColor: "#6E29F6",
+  },
+  {
+    name: "SiliconFlow en",
+    websiteUrl: "https://siliconflow.com",
+    apiKeyUrl: "https://cloud.siliconflow.com/account/ak",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.siliconflow.com",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "MiniMaxAI/MiniMax-M2.1",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "MiniMaxAI/MiniMax-M2.1",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "MiniMaxAI/MiniMax-M2.1",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "MiniMaxAI/MiniMax-M2.1",
+      },
+    },
+    category: "aggregator",
+    icon: "siliconflow",
+    iconColor: "#000000",
+  },
+  {
     name: "DMXAPI",
     websiteUrl: "https://www.dmxapi.cn",
     apiKeyUrl: "https://www.dmxapi.cn",
@@ -411,6 +464,22 @@ export const providerPresets: ProviderPreset[] = [
     partnerPromotionKey: "aigocode", // 促销信息 i18n key
     icon: "aigocode",
     iconColor: "#5B7FFF",
+  },
+  {
+    name: "RightCode",
+    websiteUrl: "https://www.right.codes",
+    apiKeyUrl: "https://www.right.codes/register?aff=CCSWITCH",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://www.right.codes/claude",
+        ANTHROPIC_AUTH_TOKEN: "",
+      },
+    },
+    category: "third_party",
+    isPartner: true,
+    partnerPromotionKey: "rightcode",
+    icon: "rc",
+    iconColor: "#E96B2C",
   },
   {
     name: "OpenRouter",
