@@ -54,10 +54,41 @@ const NEWAPI_DEFAULT_MODELS: UniversalProviderModels = {
   },
 };
 
+const N1N_DEFAULT_MODELS: UniversalProviderModels = {
+  claude: {
+    model: "claude-3-5-sonnet-20240620",
+    haikuModel: "claude-3-haiku-20240307",
+    sonnetModel: "claude-3-5-sonnet-20240620",
+    opusModel: "claude-3-opus-20240229",
+  },
+  codex: {
+    model: "gpt-4o",
+    reasoningEffort: "high",
+  },
+  gemini: {
+    model: "gemini-1.5-pro-latest",
+  },
+};
+
 /**
  * 统一供应商预设列表
  */
 export const universalProviderPresets: UniversalProviderPreset[] = [
+  {
+    name: "n1n.ai",
+    providerType: "n1n",
+    defaultApps: {
+      claude: true,
+      codex: true,
+      gemini: true,
+    },
+    defaultModels: N1N_DEFAULT_MODELS,
+    websiteUrl: "https://n1n.ai",
+    icon: "openai",
+    iconColor: "#000000",
+    description:
+      "n1n.ai - 聚合 OpenAI, Anthropic, Google 等主流大模型的一站式 AI 服务平台",
+  },
   {
     name: "NewAPI",
     providerType: "newapi",
