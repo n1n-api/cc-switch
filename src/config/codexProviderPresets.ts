@@ -78,6 +78,25 @@ export const codexProviderPresets: CodexProviderPreset[] = [
     iconColor: "#00A67E",
   },
   {
+    name: "n1n.ai",
+    websiteUrl: "https://n1n.ai",
+    apiKeyUrl: "https://n1n.ai/settings/api-keys",
+    category: "aggregator",
+    auth: generateThirdPartyAuth(""),
+    config: generateThirdPartyConfig(
+      "n1n",
+      "https://api.n1n.ai/v1",
+      "gpt-4o",
+    ),
+    endpointCandidates: [
+      "https://api.n1n.ai/v1",
+    ],
+    isPartner: true,
+    partnerPromotionKey: "n1n",
+    icon: "n1n",
+    iconColor: "#000000",
+  },
+  {
     name: "Azure OpenAI",
     websiteUrl:
       "https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/codex",

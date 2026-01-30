@@ -63,6 +63,26 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#D4915D",
   },
   {
+    name: "n1n.ai",
+    websiteUrl: "https://n1n.ai",
+    apiKeyUrl: "https://n1n.ai/settings/api-keys",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.n1n.ai/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "claude-3-5-sonnet-20240620",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-3-haiku-20240307",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-3-5-sonnet-20240620",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-3-opus-20240229",
+      },
+    },
+    category: "aggregator",
+    isPartner: true,
+    partnerPromotionKey: "n1n",
+    icon: "n1n",
+    iconColor: "#000000",
+  },
+  {
     name: "DeepSeek",
     websiteUrl: "https://platform.deepseek.com",
     settingsConfig: {

@@ -84,7 +84,7 @@ export const universalProviderPresets: UniversalProviderPreset[] = [
     },
     defaultModels: N1N_DEFAULT_MODELS,
     websiteUrl: "https://n1n.ai",
-    icon: "openai",
+    icon: "n1n",
     iconColor: "#000000",
     description:
       "n1n.ai - 聚合 OpenAI, Anthropic, Google 等主流大模型的一站式 AI 服务平台",
